@@ -84,6 +84,7 @@ class LMTrainer(BaseTrainer):
             targets_golden = targets_golden.to(self.device)
             lengths = lengths.to(self.device)
 
+            device_type = "cuda" if "cuda" in str(self.device) else "cpu"
             with torch.autocast(device_type=self.device.type, dtype=torch.float16):
                 raw_preds, attn_weights = self.model(targets_shifted, target_lengths=lengths)
                 # raw_preds: (B, T, V)  -> (B, V, T) for CrossEntropyLoss
