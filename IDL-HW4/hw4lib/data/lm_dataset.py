@@ -60,58 +60,56 @@ class LMDataset(Dataset):
         self.sos_token = tokenizer.sos_id
         self.pad_token = tokenizer.pad_id
 
-        # Set up data paths
-        root = config.get("root", config.get("root_dir"))
-        if root is None:
-            raise ValueError("Config must contain 'root' or 'root_dir' for LMDataset.")
-        self.text_dir = os.path.join(root, partition)
+                
+        self.text_dir = os.path.join(config["root"], partition)
 
-        # Get all .npy text files in the text directory in sorted order
-        all_files = os.listdir(self.text_dir)
-        self.text_files = sorted(
-            os.path.join(self.text_dir, f)
-            for f in all_files
-            if f.endswith(".npy")
-        )
+        
+        self.text_files = sorted(os.listdir(self.text_dir))
 
+       
+        subset_fraction = config["subset"]
+        subset_size = int(subset_fraction * len(self.text_files))
+        self.text_files = self.text_files[:subset_size]
+
+       
         self.transcripts_shifted = []
         self.transcripts_golden  = []
 
-        # Take subset if requested
-        subset_size = self.config.get("subset_size", self.config.get("subset", None))
-        if subset_size is not None:
-            subset_size = int(subset_size)
-            self.text_files = self.text_files[:subset_size]
-
-        # Tracking variables
+        
         self.total_chars  = 0
         self.total_tokens = 0
         self.text_max_len = 0
 
         print(f"Loading transcripts for {partition} partition...")
         for file in tqdm(self.text_files):
-            # Load the transcript: np.load -> list -> join to string
-            arr = np.load(file, allow_pickle=True)
-            transcript = "".join(arr.tolist())
+            
+            transcript = np.load(os.path.join(self.text_dir, file), allow_pickle=True)
 
-            # Track character count (before tokenization)
+            
+            if len(transcript.shape) > 0:
+                # Flatten and join with spaces
+                transcript = " ".join(transcript.astype(str).reshape(-1))
+            else:
+                transcript = str(transcript)
+
+
             self.total_chars += len(transcript)
 
-            # Tokenize transcript
+           
             tokenized = self.tokenizer.encode(transcript)
 
-            # Track token count (excluding special tokens)
+           
             self.total_tokens += len(tokenized)
 
-            # Track max length (+1 for sos/eos)
+            
             self.text_max_len = max(self.text_max_len, len(tokenized) + 1)
 
-            # Create shifted and golden sequences
+           
             shifted = [self.sos_token] + tokenized         # starts with SOS
             golden  = tokenized + [self.eos_token]         # ends with EOS
 
             self.transcripts_shifted.append(shifted)
-            self.transcripts_golden.append(golden)
+            self.transcripts_golden.append(golden))
 
         # Average characters per token
         self.avg_chars_per_token = (
