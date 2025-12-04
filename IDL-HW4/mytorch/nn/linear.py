@@ -72,7 +72,7 @@ class Linear:
         
         self.dLdW = np.dot(dLdZ_flat.T, A_flat)
 
-        self.dLdb = dLdZ_flat.sum(axis=0)
+        self.dLdb = dLdZ_flat.sum(axis=0).reshape(-1, 1)
 
         
         return self.dLdA.reshape(self.input_shape)
