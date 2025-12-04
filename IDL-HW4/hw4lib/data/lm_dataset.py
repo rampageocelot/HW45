@@ -109,7 +109,7 @@ class LMDataset(Dataset):
             golden  = tokenized + [self.eos_token]         # ends with EOS
 
             self.transcripts_shifted.append(shifted)
-            self.transcripts_golden.append(golden))
+            self.transcripts_golden.append(golden)
 
         # Average characters per token
         self.avg_chars_per_token = (
