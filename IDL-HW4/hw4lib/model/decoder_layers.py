@@ -89,13 +89,23 @@ class CrossAttentionDecoderLayer(nn.Module):
             dropout (float): The dropout rate.
         '''
         super().__init__()
-        # TODO: Implement __init__
+        super().__init__()
 
-        # TODO: Initialize the sublayers  
-        self.self_attn  = NotImplementedError # Masked self-attention layer
-        self.cross_attn = NotImplementedError # Cross-attention layer
-        self.ffn        = NotImplementedError # Feed-forward network
-        raise NotImplementedError # Remove once implemented
+        self.self_attn = SelfAttentionLayer(
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout=dropout,
+        )
+        self.cross_attn = CrossAttentionLayer(
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout=dropout,
+        )
+        self.ffn = FeedForwardLayer(
+            d_model=d_model,
+            d_ff=d_ff,
+            dropout=dropout,
+        )
 
     def forward(self, x: torch.Tensor, enc_output: torch.Tensor, dec_key_padding_mask: Optional[torch.Tensor] = None, enc_key_padding_mask: Optional[torch.Tensor] = None, attn_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         '''
@@ -111,11 +121,19 @@ class CrossAttentionDecoderLayer(nn.Module):
             self_attn_weights (torch.Tensor): The attention weights. shape: (batch_size, seq_len, seq_len)   
             cross_attn_weights (torch.Tensor): The attention weights. shape: (batch_size, seq_len, seq_len)    
         '''
-        # TODO: Implement forward: Follow the figure in the writeup
+        self_out, self_attn_weights = self.self_attn(
+            x,
+            key_padding_mask=dec_key_padding_mask,
+            attn_mask=attn_mask,
+        )
 
-        x, self_attn_weights  = NotImplementedError, NotImplementedError
-        x, cross_attn_weights = NotImplementedError, NotImplementedError
+        cross_out, cross_attn_weights = self.cross_attn(
+            self_out,
+            enc_output,
+            key_padding_mask=enc_key_padding_mask,
+            attn_mask=None,
+        )
 
-        # TODO: Return the output tensor and attention weights    
-        raise NotImplementedError # Remove once implemented
+        y = self.ffn(cross_out)
+        return y, self_attn_weights, cross_attn_weights
 ## -------------------------------------------------------------------------------------------------    
