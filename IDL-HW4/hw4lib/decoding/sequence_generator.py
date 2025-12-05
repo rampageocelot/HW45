@@ -236,7 +236,6 @@ class SequenceGenerator:
              - sequences is of shape (batch_size, beam_width, sequence_length) where each sequence in a beam set is sorted by score
              - scores is of shape (batch_size, beam_width)
         """
-        # Add input validation
         if not torch.is_tensor(x):
             raise TypeError("Input x must be a torch tensor")
         if x.dim() != 2:
@@ -245,10 +244,83 @@ class SequenceGenerator:
             raise ValueError("beam_width must be >= 1")
         if self.max_length < x.size(1):
             raise ValueError("max_length must be >= input sequence length")
-        
-        # TODO: Implement beam search
-        raise NotImplementedError # Remove once implemented
+        if temperature <= 0:
+            raise ValueError("temperature must be > 0")
 
+        batch_size, cur_len = x.size()
+        device = x.device
+        vocab_size = self.tokenizer.vocab_size
+        eos_id = self.tokenizer.eos_id
+
+        # ---- initial step ----
+        logits = self.score_fn(x)                              # (B, V)
+        logits = self._apply_repeat_penalty(logits, x, repeat_penalty)
+        logits = logits / temperature
+        log_probs = torch.log_softmax(logits, dim=-1)          # (B, V)
+
+        topk_log_probs, topk_tokens = torch.topk(
+            log_probs, beam_width, dim=-1
+        )                                                      # (B, K)
+
+        scores = topk_log_probs.clone()                        # (B, K)
+        finished = topk_tokens.eq(eos_id)                      # (B, K)
+
+        seqs = x.unsqueeze(1).expand(batch_size, beam_width, cur_len)
+        seqs = torch.cat([seqs, topk_tokens.unsqueeze(-1)], dim=-1)  # (B, K, cur_len+1)
+
+        # ---- iterative decoding ----
+        for _ in range(self.max_length - cur_len - 1):
+            if finished.all():
+                break
+
+            B, K, L = seqs.size()
+            next_token_scores = []
+
+            # compute logits separately per beam (matches provided pseudocode)
+            for k in range(beam_width):
+                beam_seq = seqs[:, k, :]                       # (B, L)
+                logits_k = self.score_fn(beam_seq)             # (B, V)
+                logits_k = self._apply_repeat_penalty(logits_k, beam_seq, repeat_penalty)
+                logits_k = logits_k / temperature
+                log_probs_k = torch.log_softmax(logits_k, dim=-1)  # (B, V)
+
+                # keep finished beams pinned to EOS
+                done_mask = finished[:, k]
+                if done_mask.any():
+                    log_probs_k[done_mask] = float("-inf")
+                    log_probs_k[done_mask, eos_id] = 0.0
+
+                next_token_scores.append(log_probs_k)
+
+            next_token_scores = torch.stack(next_token_scores, dim=1)  # (B, K, V)
+
+            cum_scores = scores.unsqueeze(-1) + next_token_scores      # (B, K, V)
+            flat_scores = cum_scores.view(batch_size, -1)              # (B, K*V)
+
+            topk_cum, topk_indices = torch.topk(
+                flat_scores, beam_width, dim=-1
+            )                                                          # (B, K)
+
+            scores = topk_cum                                          # (B, K)
+
+            beam_indices = topk_indices // vocab_size                  # (B, K)
+            token_indices = topk_indices % vocab_size                  # (B, K)
+
+            gather_index = beam_indices.unsqueeze(-1).expand(
+                -1, -1, seqs.size(-1)
+            )
+            seqs = seqs.gather(1, gather_index)                         # (B, K, L)
+            seqs = torch.cat([seqs, token_indices.unsqueeze(-1)], dim=-1)
+
+            finished = finished.gather(1, beam_indices) | token_indices.eq(eos_id)
+
+        # sort beams by final scores
+        final_scores, order = torch.sort(scores, dim=-1, descending=True)
+        gather_index = order.unsqueeze(-1).expand(-1, -1, seqs.size(-1))
+        final_seqs = seqs.gather(1, gather_index)
+
+        return final_seqs, final_scores
+    
     def generate_sample(
             self,
             x: torch.Tensor,
