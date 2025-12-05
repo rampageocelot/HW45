@@ -104,18 +104,14 @@ class CrossAttentionLayer(nn.Module):
             dropout (float): The dropout rate.
         '''
         super().__init__()
-        # TODO: Implement __init__
-        
-        # TODO: Initialize the multi-head attention mechanism (use nn.MultiheadAttention)
-        self.mha = NotImplementedError
-        
-        # TODO: Initialize the normalization layer (use nn.LayerNorm)
-        self.norm = NotImplementedError
-        
-        # TODO: Initialize the dropout layer
-        self.dropout = NotImplementedError
-        
-        raise NotImplementedError # Remove once implemented
+        self.mha = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=num_heads,
+            dropout=0.0,
+            batch_first=True,
+        )
+        self.norm = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, y: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None, attn_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
@@ -130,17 +126,21 @@ class CrossAttentionLayer(nn.Module):
             x (torch.Tensor): The output tensor. shape: (batch_size, seq_len, d_model)
             mha_attn_weights (torch.Tensor): The attention weights. shape: (batch_size, seq_len, seq_len)   
         '''
-        # TODO: Implement forward: Follow the figure in the writeup
+        residual = x
+        x_norm = self.norm(x)
 
-        # TODO: Cross-attention
-        # Be sure to use the correct arguments for the multi-head attention layer
-        # Set need_weights to True and average_attn_weights to True so we can get the attention weights 
-        x, mha_attn_weights = NotImplementedError, NotImplementedError
-        
-        # NOTE: For some regularization you can apply dropout and then add residual connection
-        
-        # TODO: Return the output tensor and attention weights
-        raise NotImplementedError # Remove once implemented
+        attn_output, attn_weights = self.mha(
+            query=x_norm,
+            key=y,
+            value=y,
+            key_padding_mask=key_padding_mask,
+            attn_mask=attn_mask,
+            need_weights=True,
+            average_attn_weights=True,
+        )
+
+        x_out = residual + self.dropout(attn_output)
+        return x_out, attn_weights
     
 ## -------------------------------------------------------------------------------------------------  
 class FeedForwardLayer(nn.Module):
